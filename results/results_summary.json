@@ -1,0 +1,59 @@
+{
+  "model": "HuggingFaceTB/SmolLM-135M",
+  "bits": 4,
+  "group_size": 64,
+  "num_layers_quantized": 2,
+  "activation_statistics": {
+    "mean": 0.05210719630122185,
+    "max": 0.8994932174682617,
+    "median": 0.046083759516477585,
+    "p99": 0.18555931746959686,
+    "max_to_mean_ratio": 17.262357384283135,
+    "p99_to_median_ratio": 4.026565522233349
+  },
+  "saliency_overlap": {
+    "top_k": 10,
+    "top_X_channels": [
+      303,
+      45,
+      517,
+      59,
+      267,
+      521,
+      371,
+      550,
+      486,
+      248
+    ],
+    "top_W_channels": [
+      45,
+      517,
+      371,
+      140,
+      224,
+      350,
+      122,
+      303,
+      59,
+      31
+    ],
+    "overlap_count": 5,
+    "overlap_percentage": 50.0
+  },
+  "avg_mse_reduction_pct": 36.1742614264489,
+  "perplexity": {
+    "fp32": 4.769827365875244,
+    "rtn": 4.790201187133789,
+    "awq": 4.724860191345215
+  },
+  "logit_faithfulness": {
+    "rtn": {
+      "cosine_similarity": 0.9983803033828735,
+      "kl_divergence": 0.005198555998504162
+    },
+    "awq": {
+      "cosine_similarity": 0.9994156360626221,
+      "kl_divergence": 0.0008754915907047689
+    }
+  }
+}

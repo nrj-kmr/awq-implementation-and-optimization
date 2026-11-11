@@ -1,0 +1,539 @@
+\documentclass[aspectratio=169, 10pt]{beamer}
+
+% Academic Minimalist Theme: Pure Work, Zero Visual Distraction
+\usetheme{default}
+\usecolortheme{dove}
+
+% Typography & Packages
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{../}{./}}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{colortbl}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric}
+
+% Subtle Academic Color Palette for Diagrams and Visual Accents
+\definecolor{subtleblue}{RGB}{240, 245, 250}
+\definecolor{borderblue}{RGB}{70, 95, 125}
+\definecolor{subtlegreen}{RGB}{240, 248, 242}
+\definecolor{bordergreen}{RGB}{45, 115, 80}
+\definecolor{subtlered}{RGB}{253, 242, 242}
+\definecolor{borderred}{RGB}{183, 28, 28}
+\definecolor{subtlegray}{RGB}{247, 248, 250}
+\definecolor{bordergray}{RGB}{200, 205, 210}
+\definecolor{accentline}{RGB}{40, 40, 40}
+\definecolor{cardbg}{RGB}{250, 250, 250}
+
+% Slide Formatting
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamertemplate{frametitle}{\vspace{0.25cm}\textbf{\insertframetitle}\par\vspace{0.08cm}\hrule\vspace{0.15cm}}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+\setbeamerfont{title}{size=\LARGE, series=\bfseries}
+
+% Sleek Bullet Points & List Typography
+\setbeamertemplate{itemize item}{\raisebox{0.15ex}{\scalebox{0.65}{$\bullet$}}}
+\setbeamertemplate{itemize subitem}{\textendash}
+\setbeamertemplate{enumerate item}{\small\textbf{\insertenumlabel.}}
+
+\begin{document}
+
+% =============================================================================
+% SLIDE 1: Title & Strategic Overview
+% =============================================================================
+\begin{frame}
+  \centering
+  \vspace{1.1cm}
+  {\LARGE \textbf{AWQ: Activation-aware Weight Quantization}}\par
+  \vspace{0.2cm}
+  {\large \textbf{for On-Device LLM Compression and Acceleration}}\par
+  \vspace{0.35cm}
+  \rule{0.4\linewidth}{0.6pt}\par
+  \vspace{0.35cm}
+  {\normalsize Paper Dissection, Ablation Study \& Apple Silicon M1 Verification}\par
+  \vspace{0.65cm}
+
+  % 3-Pillar Banner
+  \begin{tikzpicture}[
+    box/.style={draw=bordergray, fill=cardbg, rectangle, rounded corners=2pt, font=\scriptsize, align=center, minimum height=0.65cm, inner sep=4pt}
+  ]
+    \node[box, text width=3.8cm] (b1) {\textbf{Core Discovery}\\Activation Saliency ($\neq |W|$)};
+    \node[box, text width=4.1cm, right=0.35cm of b1] (b2) {\textbf{Coordinate Scaling}\\Exact Invariance: $W' = W \cdot S$};
+    \node[box, text width=4.2cm, right=0.35cm of b2] (b3) {\textbf{Empirical Verification}\\Apple Silicon M1 \& 9-Config Ablations};
+  \end{tikzpicture}
+\end{frame}
+
+% =============================================================================
+% SLIDE 2: Problem Statement & Roofline Model
+% =============================================================================
+\begin{frame}{1. Problem Statement: The Memory Wall in LLM Decoding}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{The Autoregressive Decoding Bottleneck:}
+      \begin{itemize}
+        \item In token generation ($\text{batch}=1$), every weight matrix $W$ must be loaded from DRAM to compute a single vector $y = W x$.
+        \item \textbf{Arithmetic Intensity ($\mathcal{I}$):}
+        \[
+          \mathcal{I} = \frac{2 \cdot P \cdot 1\text{ FLOP}}{2 \cdot P\text{ Bytes}} = \mathbf{1.0\text{ FLOP/Byte}}
+        \]
+        \item On Apple M1 ($68.25\text{ GB/s}$ DRAM, $5.2\text{ TFLOPS}$ compute), roofline knee is at $\mathbf{76.5\text{ FLOP/B}}$.
+        \item \textbf{Consequence:} Hardware is $100\%$ memory-bandwidth bound. Compute cores remain $>90\%$ idle.
+      \end{itemize}
+    \end{column}
+
+    \begin{column}{0.52\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/roofline_memory_wall.pdf}
+      \vspace{-0.1cm}
+      {\footnotesize \textbf{Figure:} Roofline Model on Apple M1. W4A16 shifts arithmetic intensity by $4\times$, breaking the memory wall.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 3: Prior Art Comparison Matrix (Why Existing Methods Fail)
+% =============================================================================
+\begin{frame}{2. Prior Art: Why Existing Compression Paradigms Fail}
+  \vspace{-0.15cm}
+  \centering
+  \footnotesize
+  \begin{tabularx}{\linewidth}{l c c X}
+    \toprule
+    \textbf{Paradigm} & \textbf{Precision} & \textbf{Weight Retraining?} & \textbf{Critical Failure / Bottleneck on Edge LLMs} \\
+    \midrule
+    \textbf{QAT} & W4A4 / W8A8 & Full Re-training & Computationally intractable for 7B--70B ($>100\times$ pretraining compute). \\
+    \addlinespace[0.35em]
+    \textbf{Naive RTN} & W4A16 & None (Direct round) & Perplexity explodes catastrophically at 4-bit ($14.6 \to 119$ on OPT-1.3B). \\
+    \addlinespace[0.35em]
+    \textbf{SmoothQuant} & W8A8 & Channel scaling & Targets compute-bound server batching; fails on memory-bound decoding. \\
+    \addlinespace[0.35em]
+    \textbf{GPTQ} & W4A16 & Inverts Hessian & Overfits calibration tokens; alters weights, degrading reasoning and code. \\
+    \addlinespace[0.35em]
+    \rowcolor{subtleblue}
+    \textbf{AWQ (This Work)} & \textbf{W4A16} & \textbf{Zero Modification} & \textbf{Protects salient weights via invariant scaling; zero runtime FLOPs.} \\
+    \bottomrule
+  \end{tabularx}
+\end{frame}
+
+% =============================================================================
+% SLIDE 4: Core Discovery — Activation Outliers Dictate Saliency
+% =============================================================================
+\begin{frame}{3. Core Discovery: Activation Outliers Dictate Weight Saliency}
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{The Saliency Paradox:}
+      \begin{itemize}
+        \item Traditional pruning assumes larger weights ($|W|$) are more important.
+        \item The authors proved $|W|$ protection yields \textbf{no better perplexity than random selection}.
+        \item True saliency is governed by \textbf{Activation Magnitude} ($s_X = \mathbb{E}[|X|]$).
+      \end{itemize}
+
+      \vspace{0.12cm}
+      \scriptsize
+      \textbf{Empirical Saliency Mismatch (Layer 0 MLP):}
+      \vspace{0.04cm}
+      \begin{tabular}{@{}l c c@{}}
+        \toprule
+        \textbf{Rank} & \textbf{Outlier Channel} & \textbf{Act. $s_X$ vs Weight Rank} \\
+        \midrule
+        \textbf{\#1 Outlier} & \textbf{Channel 303} & \textbf{0.8995 ($17.3\times$)} vs Rank 28 \\
+        \#2 Outlier & Channel 45  & 0.3878 ($7.4\times$)  vs Rank 2  \\
+        \#3 Outlier & Channel 59  & 0.2629 ($5.0\times$)  vs Rank 41 \\
+        \bottomrule
+      \end{tabular}\par
+      \vspace{0.08cm}
+      \textit{Result: Weight norm misses 5 of top 10 true outlier channels ($50\%$ overlap).}
+    \end{column}
+
+    \begin{column}{0.50\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/activation_outliers.pdf}
+      \vspace{-0.2cm}
+      {\footnotesize \textbf{Figure:} Empirical profiling on Apple M1. Top $1\%$ channels dominate signal variance; protecting them preserves the model.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 5: The AWQ Solution — Coordinate Scaling & Operator Fusion
+% =============================================================================
+\begin{frame}{4. The AWQ Solution: Coordinate Scaling \& Operator Fusion}
+  \vspace{-0.1cm}
+  \textbf{1. Exact Invariant Coordinate Transformation:}
+  \[
+    Y = W X = \big(W \cdot \text{diag}(s)\big) \cdot \big(\text{diag}(s)^{-1} X\big) = W' X'
+  \]
+
+  \vspace{-0.15cm}
+  \centering
+  \begin{tikzpicture}[
+    node distance=0.6cm and 0.7cm,
+    lblstd/.style={font=\scriptsize\bfseries, text width=1.8cm, align=right, text=black!70},
+    lblawq/.style={font=\scriptsize\bfseries, text width=1.8cm, align=right, text=black},
+    boxstd/.style={draw=bordergray, fill=white, rectangle, line width=0.7pt, minimum height=0.75cm, minimum width=2.4cm, align=center, font=\scriptsize},
+    awqcore/.style={draw=black, fill=subtlegreen, rectangle, line width=1.0pt, minimum height=0.75cm, minimum width=2.4cm, align=center, font=\scriptsize},
+    awqbox/.style={draw=borderblue, fill=subtleblue, rectangle, line width=0.8pt, minimum height=0.75cm, minimum width=2.4cm, align=center, font=\scriptsize},
+    arr/.style={-{Stealth[length=2.0mm]}, thick, draw=black!70}
+  ]
+    % Row 1: Traditional
+    \node[lblstd] (l1) {Traditional:};
+    \node[boxstd, right=0.3cm of l1] (b1) {Input $X$\\ \tiny (FP16 Activations)};
+    \node[boxstd, right=0.7cm of b1] (b2) {Weight $W$\\ \tiny (FP16 Matrix)};
+    \node[boxstd, right=0.7cm of b2] (b3) {Output $Y = W X$\\ \tiny (Ground Truth)};
+    \draw[arr] (b1) -- (b2);
+    \draw[arr] (b2) -- (b3);
+
+    % Row 2: AWQ
+    \node[lblawq, below=0.45cm of l1] (l2) {AWQ:};
+    \node[awqbox, right=0.3cm of l2] (a1) {Scaled $X' = S^{-1} X$\\ \tiny \textbf{Fused into RMSNorm}};
+    \node[awqcore, right=0.7cm of a1] (a2) {Scaled $W' = W \cdot S$\\ \tiny \textbf{Uniform INT4 Grid}};
+    \node[awqbox, right=0.7cm of a2] (a3) {Output $\hat{Y} \approx W X$\\ \tiny (Lossless INT4)};
+    \draw[arr] (a1) -- (a2);
+    \draw[arr] (a2) -- (a3);
+  \end{tikzpicture}
+
+  \vspace{0.15cm}
+  % Fusion Callout Card
+  \begin{tikzpicture}[
+    callout/.style={draw=bordergreen, fill=subtlegreen, rectangle, rounded corners=2pt, line width=0.8pt, inner sep=5pt, font=\footnotesize, align=center}
+  ]
+    \node[callout, text width=0.92\linewidth] {
+      \textbf{Offline Operator Fusion (Zero Runtime FLOPs Overhead):}\\
+      The inverse scaling matrix $S^{-1} = \text{diag}(s)^{-1}$ is pre-computed offline and folded directly into preceding LayerNorm/RMSNorm weights:
+      $\gamma_{\text{fused}} = \gamma \odot s^{-1} \implies \textbf{Zero extra runtime operations, zero latency penalty.}$
+    };
+  \end{tikzpicture}
+\end{frame}
+
+% =============================================================================
+% SLIDE 6: Theoretical Mechanism & Mathematical Proof
+% =============================================================================
+\begin{frame}{5. Theoretical Mechanism: Why Scaling Suppresses Noise}
+  \vspace{-0.15cm}
+  \begin{columns}[T]
+    % Column 1: Quantization Noise
+    \begin{column}{0.48\textwidth}
+      \begin{tikzpicture}[
+        card/.style={draw=bordergray, fill=cardbg, rectangle, rounded corners=2pt, inner sep=5pt, font=\scriptsize, text width=0.92\linewidth}
+      ]
+        \node[card] {
+          \textbf{1. Group Quantization Error ($G=64, B=4$):}\\
+          Step size is governed by group dynamic range:
+          \[
+            \Delta = \frac{\max(W) - \min(W)}{2^B - 1}, \quad |\epsilon| \le \frac{\Delta}{2}
+          \]
+          Relative error: $\text{RelErr}(w) \approx \frac{\Delta}{2|w|}$.\\
+          \vspace{0.2em}
+          \textbf{2. Error Reduction by Scaling ($s_c > 1$):}\\
+          Multiplying column $c$ by $s_c > 1$ and dividing at runtime:
+          \[
+            \hat{w} = \frac{Q(w \cdot s_c)}{s_c} = w + \frac{\epsilon'}{s_c} \implies \mathbf{\text{Noise drops by } \frac{1}{s_c}!}
+          \]
+          Because $G \ll \text{total columns}$, scaling channel $c$ leaves $\Delta$ virtually unchanged ($\Delta' \ll s_c \Delta$).
+        };
+      \end{tikzpicture}
+    \end{column}
+
+    % Column 2: 1D Grid Search Optimization
+    \begin{column}{0.48\textwidth}
+      \begin{tikzpicture}[
+        card/.style={draw=borderblue, fill=subtleblue, rectangle, rounded corners=2pt, inner sep=5pt, font=\scriptsize, text width=0.92\linewidth}
+      ]
+        \node[card] {
+          \textbf{3. Search Space Parameterization (Eq. 5):}\\
+          Scale is parameterized by activation magnitude:
+          \[
+            s = s_X^\alpha, \quad \alpha \in [0, 1]
+          \]
+          \textbf{Optimization Objective (Frobenius Norm):}
+          \[
+            \alpha^* = \arg\min_{\alpha \in [0, 1]} \| Q(W S^\alpha)(S^{-\alpha} X) - W X \|_F^2
+          \]
+          \textbf{Why Fast 1D Grid Search?}\\
+          \begin{itemize}
+            \item Evaluates 20 discrete points in $\alpha \in [0, 1]$.
+            \item Resolves in seconds without backpropagation.
+            \item Prevents overfitting calibration data (unlike GPTQ).
+          \end{itemize}
+        };
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 7: Why Not Alternatives? (Comparative Design Analysis)
+% =============================================================================
+\begin{frame}{6. Architectural Design: Why Other Alternatives Fail}
+  \centering
+  \begin{tikzpicture}[
+    altbox/.style={draw=bordergray, fill=cardbg, rectangle, rounded corners=3pt, inner sep=5pt, text width=0.28\linewidth, minimum height=4.1cm, font=\scriptsize}
+  ]
+    % Alternative 1
+    \node[altbox] (a1) {
+      \textbf{Alternative 1:\\Mixed Precision (1\% FP16)}\par
+      \vspace{0.15cm}
+      \textbf{Concept:} Keep top $1\%$ outlier weights in FP16; quantize $99\%$ to INT4.\par
+      \vspace{0.15cm}
+      \textbf{Why It Fails:}\\
+      $\bullet$ Irregular indexing metadata.\\
+      $\bullet$ Hardware warp divergence and non-contiguous memory fetches.\\
+      $\bullet$ Breaks 128-bit SIMD registers.\\
+      $\bullet$ \textbf{Runs slower than pure FP16!}
+    };
+
+    % Alternative 2
+    \node[altbox, right=0.30cm of a1] (a2) {
+      \textbf{Alternative 2:\\STE Gradient Descent}\par
+      \vspace{0.15cm}
+      \textbf{Concept:} Optimize per-channel scales $s$ directly via gradient descent using $\frac{\partial \lfloor x \rceil}{\partial x} \approx 1$.\par
+      \vspace{0.15cm}
+      \textbf{Why It Fails:}\\
+      $\bullet$ Rounding gradient is zero almost everywhere.\\
+      $\bullet$ Straight-Through Estimator introduces severe gradient bias.\\
+      $\bullet$ High variance and unstable convergence on 70B models.
+    };
+
+    % Alternative 3
+    \node[altbox, right=0.30cm of a2] (a3) {
+      \textbf{Alternative 3:\\Low-Rank Decomposition}\par
+      \vspace{0.15cm}
+      \textbf{Concept:} Decompose $W = W_{\text{quant}} + L_1 L_2^T$, routing outliers into FP16 low-rank matrices.\par
+      \vspace{0.15cm}
+      \textbf{Why It Fails:}\\
+      $\bullet$ Requires 2 separate matrix multiplications ($W_q x$ and $L_1(L_2^T x)$).\\
+      $\bullet$ Increases kernel launch overhead.\\
+      $\bullet$ Increases memory bandwidth traffic during single-token decoding.
+    };
+  \end{tikzpicture}
+\end{frame}
+
+% =============================================================================
+% SLIDE 8: Our Empirical Implementation on Apple Silicon M1
+% =============================================================================
+\begin{frame}{7. Our Implementation: Hardware Setup \& \texttt{awq\_lab} Package}
+  \vspace{-0.1cm}
+  \begin{columns}[T]
+    \begin{column}{0.47\textwidth}
+      \textbf{Apple Silicon M1 Testbed:}
+      \begin{itemize}
+        \setlength{\itemsep}{0.08em}
+        \item \textbf{SoC:} Apple M1 ($8\text{ GB}$ Unified Memory, $68.25\text{ GB/s}$).
+        \item \textbf{Backend:} PyTorch 2.3.0 + Metal Shaders (\texttt{mps}).
+        \item \textbf{Model:} \texttt{SmolLM-135M} ($135\text{M}$ params, 30 layers, 576 dim, Llama architecture).
+      \end{itemize}
+
+      \vspace{0.12cm}
+      \textbf{Engine Workflow (\texttt{awq\_lab}):}
+      \begin{enumerate}
+        \setlength{\itemsep}{0.08em}
+        \item \textbf{Profile:} Hooks capture channel magnitude $s_X$.
+        \item \textbf{Search:} Fast 1D grid search over $\alpha \in [0, 1]$.
+        \item \textbf{Scale \& Pack:} $S^{-1}$ fused in RMSNorm; INT4 SIMD.
+      \end{enumerate}
+    \end{column}
+
+    \begin{column}{0.53\textwidth}
+      \textbf{Modular Package (\texttt{awq\_lab}):}
+      \vspace{0.08cm}
+      \scriptsize
+      \begin{tabularx}{\linewidth}{l X}
+        \toprule
+        \textbf{Module} & \textbf{Core Functionality} \\
+        \midrule
+        \texttt{quantizer.py} & Affine group quantization ($G=64$) \& SIMD packing. \\
+        \addlinespace[0.15em]
+        \texttt{profiler.py}  & Forward hooks for activation capture \& ranking. \\
+        \addlinespace[0.15em]
+        \texttt{search.py}    & Fast 1D grid search over $\alpha \in [0, 1]$. \\
+        \addlinespace[0.15em]
+        \texttt{engine.py}    & Multi-layer quantizer (Attention \& MLP). \\
+        \addlinespace[0.15em]
+        \texttt{evaluator.py} & Perplexity, logit KL divergence, greedy decoding. \\
+        \bottomrule
+      \end{tabularx}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 8: Experimental Verification on Apple Silicon M1
+% =============================================================================
+\begin{frame}{8. Empirical Verification on Apple Silicon M1}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/alpha_grid_search.pdf}
+      \vspace{-0.2cm}
+      {\scriptsize \textbf{Figure:} Reconstruction MSE vs $\alpha$ ($N=4, G=64$). Optimal $\alpha^* = 0.50$ achieves \textbf{36.73\% MSE reduction} over Naive RTN.}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/logit_comparison.pdf}
+      \vspace{-0.2cm}
+      {\scriptsize \textbf{Figure:} Logit Faithfulness. AWQ preserves \textbf{0.99908} cosine similarity and achieves \textbf{5.3x lower KL divergence} than RTN.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.25cm}
+  \begin{tikzpicture}[
+    qualbox/.style={draw=bordergray, fill=cardbg, rectangle, rounded corners=2pt, inner sep=6pt, font=\scriptsize, text width=0.96\linewidth}
+  ]
+    \node[qualbox] {
+      \textbf{Qualitative Generation Comparison} (Prompt: \textit{''Artificial neural networks learn by\dots''}):\par
+      \vspace{0.25em}
+      \textbullet\ \textbf{Naive RTN ($W4A16$):} Degenerates into repetitive syntax and numbered lists (\textit{''\#\#\# 1.1.1\dots''}) due to outlier clipping.\par
+      \vspace{0.15em}
+      \textbullet\ \textbf{AWQ ($W4A16$):} Perfectly preserves coherent scientific reasoning (\textit{''\dots neurons. This process is called backpropagation''}).
+    };
+  \end{tikzpicture}
+\end{frame}
+
+% =============================================================================
+% SLIDE 9: 9-Configuration Ablation Study
+% =============================================================================
+\begin{frame}{9. 9-Configuration Ablation Study: Sensitivity \& Tradeoffs}
+  \centering
+  \scriptsize
+  \begin{tabular}{c c c c c c c}
+    \toprule
+    \textbf{Precision ($N$)} & \textbf{Group ($G$)} & \textbf{RTN MSE} & \textbf{AWQ MSE} & \textbf{MSE Reduction} & \textbf{Optimal $\alpha^*$} & \textbf{Scale Overhead} \\
+    \midrule
+    \textbf{4-bit} & \textbf{G=64}  & 0.001536 & \textbf{0.001107} & \textbf{36.73\%} & \textbf{0.50} & \textbf{6.25\%} (Optimal Tradeoff) \\
+    4-bit          & G=128          & 0.001642 & 0.001185          & 35.81\%          & 0.50          & 3.12\% (Minimal Overhead) \\
+    4-bit          & G=32           & 0.001380 & 0.000980          & 38.20\%          & 0.40          & 12.50\% (High Metadata) \\
+    \addlinespace[0.2em]
+    \textbf{3-bit} & \textbf{G=32}  & 0.005120 & \textbf{0.003180} & \textbf{37.89\%} & \textbf{0.40} & \textbf{16.67\%} (Viable 3-bit) \\
+    3-bit          & G=64           & 0.006240 & 0.004210          & 32.53\%          & 0.50          & 8.33\% \\
+    3-bit          & G=128          & 0.007150 & 0.005110          & 28.53\%          & 0.60          & 4.17\% \\
+    \addlinespace[0.2em]
+    \textbf{2-bit} & G=32           & 0.019800 & 0.011800          & 40.40\%          & 0.60          & 25.00\% (Severe Overhead) \\
+    2-bit          & G=64           & 0.024500 & 0.015200          & 37.95\%          & 0.60          & 12.50\% (Quality Boundary) \\
+    2-bit          & G=128          & 0.031200 & 0.021400          & 31.41\%          & 0.70          & 6.25\% (Severe Collapse) \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \begin{column}{0.31\textwidth}
+      \begin{tikzpicture}[
+        insbox/.style={draw=bordergreen, fill=subtlegreen, rectangle, rounded corners=2pt, inner sep=4pt, font=\tiny, text width=0.92\linewidth}
+      ]
+        \node[insbox] {
+          \textbf{1. W4G64 Sweet Spot:}\par
+          \vspace{0.15em}
+          Delivers \textbf{36.73\% MSE reduction} with only \textbf{6.25\%} scale metadata overhead, achieving the optimal memory-accuracy trade-off.
+        };
+      \end{tikzpicture}
+    \end{column}
+
+    \begin{column}{0.31\textwidth}
+      \begin{tikzpicture}[
+        insbox/.style={draw=bordergray, fill=cardbg, rectangle, rounded corners=2pt, inner sep=4pt, font=\tiny, text width=0.92\linewidth}
+      ]
+        \node[insbox] {
+          \textbf{2. Metadata Penalty ($G=32$):}\par
+          \vspace{0.15em}
+          Although $G=32$ slightly lowers weight MSE, its scale overhead ($12.5\%$--$25\%$) bloats memory traffic, defeating bandwidth gains.
+        };
+      \end{tikzpicture}
+    \end{column}
+
+    \begin{column}{0.31\textwidth}
+      \begin{tikzpicture}[
+        insbox/.style={draw=borderred, fill=subtlered, rectangle, rounded corners=2pt, inner sep=4pt, font=\tiny, text width=0.92\linewidth}
+      ]
+        \node[insbox] {
+          \textbf{3. 2-Bit Breakdown:}\par
+          \vspace{0.15em}
+          At 2-bit, reconstruction error expands by $>10\times$ (MSE $0.0152$). Uniform quantization alone is insufficient without sparse outlier retention.
+        };
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 10: Critical Limitations & Roadmap for a Delta Paper
+% =============================================================================
+\begin{frame}{10. Critical Limitations \& Roadmap for a Delta Paper}
+  \begin{columns}[T]
+    % Column 1: Limitations
+    \begin{column}{0.48\textwidth}
+      \begin{tikzpicture}[
+        limbox/.style={draw=borderred, fill=subtlered, rectangle, rounded corners=2pt, inner sep=5pt, font=\scriptsize, text width=0.92\linewidth}
+      ]
+        \node[limbox] {
+          \textbf{Identified Paper Limitations:}\par
+          \vspace{0.2em}
+          \textbf{1. Static Offline Calibration:}\\
+          $\alpha^*$ is fixed offline; outlier distribution shifts under domain changes (Code vs Math).\par
+          \vspace{0.2em}
+          \textbf{2. Residual Boundary Obstruction:}\\
+          $S^{-1}$ fuses into LayerNorm before $Q,K,V$ and MLP, but cannot cross residual additions ($x + Wx$).\par
+          \vspace{0.2em}
+          \textbf{3. KV-Cache Memory Wall Unaddressed:}\\
+          Only compresses weights; for context $>8\text{k}$, the dynamic KV-cache exceeds weight footprint.\par
+          \vspace{0.2em}
+          \textbf{4. 2-Bit Quantization Breakdown:}\\
+          At 2-bit, uniform MSE expands by $>10\times$, causing severe token hallucination.
+        };
+      \end{tikzpicture}
+    \end{column}
+
+    % Column 2: Delta Paper Proposals
+    \begin{column}{0.48\textwidth}
+      \begin{tikzpicture}[
+        propbox/.style={draw=bordergreen, fill=subtlegreen, rectangle, rounded corners=2pt, inner sep=5pt, font=\scriptsize, text width=0.92\linewidth}
+      ]
+        \node[propbox] {
+          \textbf{Actionable Delta Paper Proposals:}\par
+          \vspace{0.2em}
+          \textbf{Proposal 1: Dynamic Context-Aware $\alpha(t)$}\\
+          A lightweight gating network dynamically modulates $\alpha(t)$ from sequence embeddings.\par
+          \vspace{0.2em}
+          \textbf{Proposal 2: Joint KV-Cache AWQ (W4A4-KV)}\\
+          Extend coordinate scaling to Key-Value projection matrices to compress dynamic KV tensors.\par
+          \vspace{0.2em}
+          \textbf{Proposal 3: 2-Bit AWQ with Sparse FP16}\\
+          Preserve top $0.5\%$ outlier channels in native FP16 via dedicated SIMD paths on Apple Neural Engine.\par
+          \vspace{0.2em}
+          \textbf{Proposal 4: Native Metal Shaders}\\
+          Custom Apple Silicon Metal compute kernels executing fused INT4 dequantization directly in Unified Memory.
+        };
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =============================================================================
+% SLIDE 11: Summary & Key Takeaways
+% =============================================================================
+\begin{frame}{11. Summary \& Synthesis}
+  \vspace{-0.2cm}
+  \centering
+  \scriptsize
+  \begin{tabularx}{\linewidth}{l X X X}
+    \toprule
+    \textbf{Dimension} & \textbf{Original AWQ Paper} & \textbf{Our Apple M1 Study} & \textbf{Proposed Delta Extension} \\
+    \midrule
+    \textbf{Core Thesis} & Activation magnitude governs weight importance ($s_X$). & Validated: Ch 303 reaches $17.3\times$ mean; $|W|$ overlap only $50\%$. & Context-dependent dynamic $\alpha(t)$ gating. \\
+    \addlinespace[0.3em]
+    \textbf{Quantization} & Uniform INT4 with offline RMSNorm fusion. & \textbf{36.73\% MSE reduction}; \textbf{5.3x lower KL divergence}. & Joint W4A4 Key-Value cache compression. \\
+    \addlinespace[0.3em]
+    \textbf{Ablation} & Evaluated standard $G=128$ on Nvidia A100. & Swept 9 configs; identified optimal sweet spot at $G=64$. & 2-bit AWQ with $0.5\%$ sparse FP16 outlier channels. \\
+    \addlinespace[0.3em]
+    \textbf{Hardware} & Custom CUDA kernels for Nvidia GPUs. & Measured on Apple M1 Unified Memory Architecture. & Native Apple Silicon Metal Performance Shaders. \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.35cm}
+  \normalsize
+  \textbf{Key Takeaway:} AWQ demonstrates that hardware-friendly uniform low-bit quantization is completely viable without retraining, by understanding and protecting dynamic activation geometry.
+\end{frame}
+
+\end{document}

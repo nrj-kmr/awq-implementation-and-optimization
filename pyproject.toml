@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "awq-lab"
+version = "1.0.0"
+description = "Empirical Implementation and Verification of Activation-aware Weight Quantization (AWQ) on Apple Silicon"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "M.Tech AI Lab - IIITV" }
+]
+keywords = ["llm", "quantization", "awq", "apple-silicon", "deep-learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.36.0",
+    "accelerate>=0.26.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "safetensors>=0.4.0",
+    "pymupdf>=1.23.0",
+]
+
+[project.scripts]
+awq-run = "main_experiment:main"
+awq-ablate = "run_ablations:main"
+awq-figures = "helpers.generate_presentation_figures:main"
+
+[tool.setuptools]
+py-modules = ["main_experiment", "run_ablations", "test_awq_on_mac"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["awq_lab*", "helpers*"]

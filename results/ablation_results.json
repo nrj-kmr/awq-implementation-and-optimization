@@ -1,0 +1,83 @@
+[
+  {
+    "bits": 4,
+    "group_size": 32,
+    "rtn_mse": 0.0012025594478473067,
+    "awq_mse": 0.0008626550552435219,
+    "mse_reduction_pct": 28.265080218050365,
+    "optimal_alpha": 0.35,
+    "metadata_overhead_pct": 12.5
+  },
+  {
+    "bits": 4,
+    "group_size": 64,
+    "rtn_mse": 0.0015360027318820357,
+    "awq_mse": 0.0011073946952819824,
+    "mse_reduction_pct": 27.90411942007992,
+    "optimal_alpha": 0.3,
+    "metadata_overhead_pct": 6.25
+  },
+  {
+    "bits": 4,
+    "group_size": 128,
+    "rtn_mse": 0.001904512057080865,
+    "awq_mse": 0.0014030286110937595,
+    "mse_reduction_pct": 26.331334796365248,
+    "optimal_alpha": 0.3,
+    "metadata_overhead_pct": 3.125
+  },
+  {
+    "bits": 3,
+    "group_size": 32,
+    "rtn_mse": 0.005642343778163195,
+    "awq_mse": 0.004048191010951996,
+    "mse_reduction_pct": 28.253378912870108,
+    "optimal_alpha": 0.35,
+    "metadata_overhead_pct": 16.666666666666664
+  },
+  {
+    "bits": 3,
+    "group_size": 64,
+    "rtn_mse": 0.007245131302624941,
+    "awq_mse": 0.005230954848229885,
+    "mse_reduction_pct": 27.800413412318857,
+    "optimal_alpha": 0.3,
+    "metadata_overhead_pct": 8.333333333333332
+  },
+  {
+    "bits": 3,
+    "group_size": 128,
+    "rtn_mse": 0.009027511812746525,
+    "awq_mse": 0.006500908173620701,
+    "mse_reduction_pct": 27.987818698374333,
+    "optimal_alpha": 0.25,
+    "metadata_overhead_pct": 4.166666666666666
+  },
+  {
+    "bits": 2,
+    "group_size": 32,
+    "rtn_mse": 0.03155277669429779,
+    "awq_mse": 0.021836455911397934,
+    "mse_reduction_pct": 30.79386919584731,
+    "optimal_alpha": 0.4,
+    "metadata_overhead_pct": 25.0
+  },
+  {
+    "bits": 2,
+    "group_size": 64,
+    "rtn_mse": 0.04126077517867088,
+    "awq_mse": 0.02825206331908703,
+    "mse_reduction_pct": 31.528035533148458,
+    "optimal_alpha": 0.3,
+    "metadata_overhead_pct": 12.5
+  },
+  {
+    "bits": 2,
+    "group_size": 128,
+    "rtn_mse": 0.050917357206344604,
+    "awq_mse": 0.03510621562600136,
+    "mse_reduction_pct": 31.052557414297777,
+    "optimal_alpha": 0.3,
+    "metadata_overhead_pct": 6.25
+  }
+]
