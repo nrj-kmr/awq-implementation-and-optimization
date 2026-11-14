@@ -20,11 +20,11 @@
 
 \title{Implementation and Sensitivity Optimization of Low-Bit Activation-Aware Weight Quantization for Edge LLM Inference on UMA}
 
-\author{\IEEEauthorblockN{Neeraj Kumar}
+\author{\IEEEauthorblockN{Neeraj Kumar\IEEEauthorrefmark{1} and Ashish Dwivedi\IEEEauthorrefmark{2}}
 \IEEEauthorblockA{\textit{Department of Artificial Intelligence} \\
 \textit{Indian Institute of Information Technology Vadodara - ICD}\\
 Diu, Daman \& Diu, India \\
-20262603008@iiitvadodara.ac.in}
+\IEEEauthorrefmark{1}20262603008@iiitvadodara.ac.in, \IEEEauthorrefmark{2}20262603003@iiitvadodara.ac.in}
 }
 
 \maketitle
@@ -68,7 +68,7 @@ Nonetheless, naive Round-to-Nearest (RTN) post-training quantization at 4 bits i
 
 Activation-aware Weight Quantization (AWQ)~\cite{lin2024awq} resolves this problem by recognizing that weight importance is not governed by weight magnitude $|W|$, but by activation magnitude $s_X$. By applying a mathematically equivalent coordinate scaling transformation, AWQ scales up salient weight columns before quantization and folds the inverse scale factors offline into preceding LayerNorm or RMSNorm operators, requiring zero runtime compute overhead.
 
-However, prior studies have evaluated AWQ primarily under fixed default settings (specifically 4-bit precision with group size $G=128$) on discrete NVIDIA GPUs. Several critical architectural questions remain unaddressed for resource-constrained edge execution:
+While Lin et al.~\cite{lin2024awq} developed the TinyChat inference system to demonstrate the viability of 4-bit AWQ across edge platforms including Apple Silicon M1 and NVIDIA Jetson, foundational studies evaluated AWQ primarily under a fixed, single operating point: standard 4-bit precision with a coarse group size of $G=128$. Consequently, several critical architectural questions remain unaddressed for resource-constrained edge execution:
 \begin{enumerate}
     \item \textbf{Bit-Width Degradation Dynamics}: How does reconstruction fidelity scale as precision drops to 3-bit and 2-bit regimes, and where does uniform coordinate scaling collapse?
     \item \textbf{The Metadata Overhead Trap}: Does shrinking group size to $G=32$ justify the substantial increase in FP16 scale metadata overhead across the unified memory bus?
